@@ -152,21 +152,6 @@ jobs:
         with:
           name: renode-macos-x64
           path: dist/renode-macos-x64.*
-          tar -xzf $GITHUB_WORKSPACE/artifacts/mono-macos-x64.tar.gz
-          cd $GITHUB_WORKSPACE
-          
-          # 実行ラッパーを作成
-          cat > dist/renode-macos-x64/renode << 'EOF'
-          #!/bin/bash
-          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-          export PATH="$SCRIPT_DIR/mono/bin:$PATH"
-          export DYLD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$DYLD_LIBRARY_PATH"
-          exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
-          EOF
-          chmod +x dist/renode-macos-x64/renode
-          
-          cd dist
-          tar -czf renode-macos-x64.tar.gz renode-macos-x64
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -183,18 +168,22 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Mono のインストール
-          choco install mono -y
-          # Git と Visual Studio Build Tools
-          choco install git visualstudio2022buildtools -y
-          # MSBuild の PATH を設定
-          echo "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # .NET SDKをインストール（Renodeは.NET対応）
+          choco install dotnet-sdk -y
+          # Git（通常はプリインストール済み）
+          choco install git -y
+          # Visual Studio Build Toolsが必要な場合
+          choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
+          
+          # 環境変数を設定
+          echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> $env:GITHUB_ENV
 
       - name: Clone and build Renode
         run: |
           git clone --depth 1 --branch ${{ env.RENODE_VERSION }} https://github.com/renode/renode.git
           cd renode
-          .\build.bat -p
+          # Windowsでは.NETビルドを使用
+          .\build.sh --net -p
           
       - name: Package Renode for distribution
         run: |
