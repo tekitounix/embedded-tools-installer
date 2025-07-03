@@ -69,9 +69,9 @@ gh workflow run build.yml
 ### Node.js/TypeScript から使用
 
 ```typescript
-import { RenodeInstaller } from './src/installRenode.js';
+import { RenodeInstaller } from 'tekitounix/embedded-tools-installer';
 
-const installer = new RenodeInstaller('your-username', 'renode-runtime');
+const installer = new RenodeInstaller('tekitounix', 'embedded-tools-installer');
 
 // インストール
 await installer.install();
@@ -87,24 +87,24 @@ await installer.uninstall();
 
 ```bash
 # インストール
-npm run install
+npx tekitounix/embedded-tools-installer install
 
-# 強制再インストール
-npm run test
+# ARM開発ツールのインストール
+npx tekitounix/embedded-tools-installer install-embedded
 
 # ステータス確認
-npm run status
+npx tekitounix/embedded-tools-installer status
 
 # アンインストール
-npm run uninstall
+npx tekitounix/embedded-tools-installer uninstall
 ```
 
 ### 環境変数で設定をカスタマイズ
 
 ```bash
 # リポジトリ設定
-export RENODE_REPO_OWNER="your-username"
-export RENODE_REPO_NAME="renode-runtime"
+export RENODE_REPO_OWNER="tekitounix"
+export RENODE_REPO_NAME="embedded-tools-installer"
 
 # インストール実行
 node dist/installRenode.js install
@@ -128,10 +128,10 @@ node dist/installRenode.js install
 
 ```typescript
 import * as vscode from 'vscode';
-import { RenodeInstaller } from './installRenode';
+import { RenodeInstaller } from 'tekitounix/embedded-tools-installer';
 
 export async function activate(context: vscode.ExtensionContext) {
-    const installer = new RenodeInstaller('your-username', 'renode-runtime');
+    const installer = new RenodeInstaller('tekitounix', 'embedded-tools-installer');
     
     // 拡張初回起動時にインストール
     const isInstalled = await installer.isInstalled();
@@ -148,6 +148,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // コマンド登録
     context.subscriptions.push(
         vscode.commands.registerCommand('extension.installRenode', () => installer.install(true)),
+        vscode.commands.registerCommand('extension.renodeStatus', () => installer.status())
+    );
+}
+```
         vscode.commands.registerCommand('extension.renodeStatus', () => installer.status())
     );
 }
