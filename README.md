@@ -4,13 +4,13 @@
 
 このプロジェクトは、Renode（MIT）・Mono（MIT/LGPL）・ARM GNU Toolchain・OpenOCD等の組み込み開発ツールを GitHub Actions で自動ビルド・配布し、VSCode拡張や他のアプリケーションから簡単にインストールできるようにするシステムです。
 
-> **⚠️ 重要**: このリポジトリ自体にはバイナリやソースコードは含まれません。すべてのツールはGitHub Releasesを通じて配布されます。
+> **🔒 セルフホスト方式の採用**: 公式バイナリURLの不安定性を避けるため、すべてのツールをソースからビルドし、GitHub Releasesでセルフホスト配布しています。これにより、安定したURL・バージョン管理・長期サポートを実現しています。
 
 ## 🎯 特徴
 
 - ✅ **自動上流監視**: Renode・Mono・ARM Toolchain・OpenOCDの新しいリリースを自動検出
-- ✅ **クロスプラットフォームビルド**: Linux/macOS/Windows対応  
-- ✅ **バイナリ配布**: GitHub Releases で自動配布（リポジトリにはバイナリを含まない）
+- ✅ **クロスプラットフォームビルド**: Linux/macOS/Windows対応（完全ソースビルド）  
+- ✅ **セルフホスト配布**: GitHub Releases で自動配布（公式バイナリへの依存なし）
 - ✅ **簡単インストール**: ワンコマンドでユーザー環境に展開
 - ✅ **ライセンス準拠**: MIT/LGPL要件に沿った再配布
 
@@ -18,8 +18,8 @@
 
 | ツール | 用途 | ライセンス | 配布方法 |
 |--------|------|------------|----------|
-| **Renode** | システム全体シミュレーション | MIT | GitHub Releases |
-| **Mono** | .NET Framework | MIT/LGPL | GitHub Releases | 
+| **Renode** | システム全体シミュレーション | MIT | ソースビルド＋セルフホスト |
+| **Mono** | .NET Framework | MIT/LGPL | ソースビルド＋セルフホスト |
 | **ARM GNU Toolchain** | ARM Cortex クロスコンパイル | GPL | GitHub Releases |
 | **OpenOCD** | JTAG/SWDデバッガー | GPL | GitHub Releases |
 
@@ -121,8 +121,8 @@ node dist/installRenode.js install
 - **トリガー**: 上流更新検知、手動実行、VERSION ファイル変更
 - **機能**: 
   - Mono をソースからクロスプラットフォームビルド
-  - Renode の公式バイナリをダウンロード・再パッケージ
-  - 統合パッケージを作成してリリース
+  - Renode をソースからクロスプラットフォームビルド（セルフホスト配布）
+  - 統合パッケージを作成してGitHub Releasesで配布
 
 ## 🔧 VSCode拡張での使用例
 
@@ -152,10 +152,6 @@ export async function activate(context: vscode.ExtensionContext) {
     );
 }
 ```
-        vscode.commands.registerCommand('extension.renodeStatus', () => installer.status())
-    );
-}
-```
 
 ## 📋 サポートプラットフォーム
 
@@ -170,6 +166,7 @@ export async function activate(context: vscode.ExtensionContext) {
 ### ビルドが失敗する場合
 
 1. **依存関係の確認**:
+
    ```bash
    npm install
    npm run build
@@ -202,3 +199,29 @@ Issues や Pull Requests を歓迎します！
 - [Renode 公式サイト](https://renode.io/)
 - [Mono プロジェクト](https://www.mono-project.com/)
 - [GitHub Actions ドキュメント](https://docs.github.com/en/actions)
+
+## ⚠️ 配布方式：なぜセルフホストなのか
+
+このプロジェクトでは、以下の理由により**セルフホスト方式**（ソースからビルドしてGitHub Releasesで配布）を採用しています：
+
+### 🔗 公式バイナリの問題点
+
+- **URLの不安定性**: 公式のNightly/Releaseのダウンロードリンクが予告なく変更される
+- **アクセス制限**: 一部の環境でのダウンロード制限やアクセス障害
+- **バージョン管理**: 特定バージョンへの永続的なアクセスが困難
+
+### ✅ セルフホストの利点
+
+- **安定したURL**: GitHub Releases による永続的なダウンロードリンク
+- **バージョン固定**: 特定バージョンの長期保持・アクセス保証
+- **カスタマイズ可能**: ビルドオプションの調整・最適化
+- **ライセンス透明性**: MIT/LGPLライセンスに完全準拠した再配布
+
+### 📈 実装状況
+
+| コンポーネント | 配布方式 | ステータス |
+|---|---|---|
+| Renode | ソースビルド＋セルフホスト | ✅ 実装済み |
+| Mono | ソースビルド＋セルフホスト | ✅ 実装済み |
+| ARM Toolchain | 公式リンク（安定） | ✅ 実装済み |
+| OpenOCD | 公式リンク（安定） | ✅ 実装済み |

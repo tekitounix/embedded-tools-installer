@@ -345,28 +345,28 @@ jobs:
           cd $GITHUB_WORKSPACE
           
           # 統合実行ラッパーを作成
-          cat > dist/embedded-tools-linux-x64/setup-env.sh << 'SETUP_EOF'
-#!/bin/bash
-TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
-export LD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$LD_LIBRARY_PATH"
-echo "Embedded development environment configured!"
-echo "Available tools:"
-echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
-echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
-echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
-echo "  - renode: Available in $TOOLS_DIR"
-SETUP_EOF
+          cat > dist/embedded-tools-linux-x64/setup-env.sh << 'EOF'
+          #!/bin/bash
+          TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
+          export LD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$LD_LIBRARY_PATH"
+          echo "Embedded development environment configured!"
+          echo "Available tools:"
+          echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
+          echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
+          echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
+          echo "  - renode: Available in $TOOLS_DIR"
+          EOF
           chmod +x dist/embedded-tools-linux-x64/setup-env.sh
           
           # Renode実行ラッパー
-          cat > dist/embedded-tools-linux-x64/renode << 'RENODE_EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$SCRIPT_DIR/mono/bin:$PATH"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$LD_LIBRARY_PATH"
-exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
-RENODE_EOF
+          cat > dist/embedded-tools-linux-x64/renode << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+          export LD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$LD_LIBRARY_PATH"
+          exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+          EOF
           chmod +x dist/embedded-tools-linux-x64/renode
           
           cd dist
@@ -425,27 +425,27 @@ RENODE_EOF
           
           # 統合実行ラッパーを作成
           cat > dist/embedded-tools-macos-x64/setup-env.sh << 'EOF'
-#!/bin/bash
-TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
-export DYLD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$DYLD_LIBRARY_PATH"
-echo "Embedded development environment configured!"
-echo "Available tools:"
-echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
-echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
-echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
-echo "  - renode: Available in $TOOLS_DIR"
-EOF
+          #!/bin/bash
+          TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
+          export DYLD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$DYLD_LIBRARY_PATH"
+          echo "Embedded development environment configured!"
+          echo "Available tools:"
+          echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
+          echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
+          echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
+          echo "  - renode: Available in $TOOLS_DIR"
+          EOF
           chmod +x dist/embedded-tools-macos-x64/setup-env.sh
           
           # Renode実行ラッパー
           cat > dist/embedded-tools-macos-x64/renode << 'EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$SCRIPT_DIR/mono/bin:$PATH"
-export DYLD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$DYLD_LIBRARY_PATH"
-exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
-EOF
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+          export DYLD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$DYLD_LIBRARY_PATH"
+          exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+          EOF
           chmod +x dist/embedded-tools-macos-x64/renode
           
           cd dist
