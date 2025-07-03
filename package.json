@@ -1,0 +1,53 @@
+{
+  "name": "renode-runtime-installer",
+  "version": "1.0.0",
+  "description": "Renode Runtime automatic installer for VSCode extensions",
+  "type": "module",
+  "main": "dist/installRenode.js",
+  "bin": {
+    "install-renode": "dist/installRenode.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/installRenode.ts",
+    "install": "npm run build && node dist/installRenode.js install",
+    "status": "npm run build && node dist/installRenode.js status",
+    "uninstall": "npm run build && node dist/installRenode.js uninstall",
+    "test": "npm run build && node dist/installRenode.js install --force",
+    "clean": "rm -rf dist",
+    "install-embedded": "npm run build && node dist/installEmbeddedTools.js install",
+    "status-embedded": "npm run build && node dist/installEmbeddedTools.js status",
+    "test-embedded": "npm run build && node dist/installEmbeddedTools.js install --force"
+  },
+  "keywords": [
+    "renode",
+    "mono",
+    "embedded",
+    "simulation",
+    "vscode"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/YOUR_REPO_NAME#readme",
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/issues"
+  },
+  "dependencies": {
+    "tar": "^6.2.0",
+    "unzipper": "^0.10.14"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/tar": "^6.1.11",
+    "@types/unzipper": "^0.10.9",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

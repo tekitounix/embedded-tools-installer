@@ -1,0 +1,532 @@
+name: Build Embedded Development Tools
+
+on:
+  repository_dispatch:
+    types: [upstream-updated]
+  workflow_dispatch:
+    inputs:
+      renode_version:
+        description: 'Renode version to build'
+        required: false
+        default: 'v1.15.3'
+      mono_version:
+        description: 'Mono version to build'
+        required: false
+        default: 'mono-6.12.0.182'
+      arm_toolchain_version:
+        description: 'ARM Toolchain version to build'
+        required: false
+        default: '13.2.Rel1'
+      openocd_version:
+        description: 'OpenOCD version to build'
+        required: false
+        default: 'v0.12.0'
+  push:
+    branches: [main]
+    paths:
+      - '*_VERSION'
+
+env:
+  RENODE_VERSION: ${{ github.event.inputs.renode_version || 'v1.15.3' }}
+  MONO_VERSION: ${{ github.event.inputs.mono_version || 'mono-6.12.0.182' }}
+  ARM_TOOLCHAIN_VERSION: ${{ github.event.inputs.arm_toolchain_version || '13.2.Rel1' }}
+  OPENOCD_VERSION: ${{ github.event.inputs.openocd_version || 'v0.12.0' }}
+
+jobs:
+  # Mono のビルド (既存)
+  build-mono-linux:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            autoconf \
+            libtool \
+            automake \
+            cmake \
+            gettext \
+            libglib2.0-dev \
+            git
+
+      - name: Clone and build Mono
+        run: |
+          git clone --depth 1 --branch ${{ env.MONO_VERSION }} https://github.com/mono/mono.git
+          cd mono
+          ./autogen.sh --prefix=/tmp/mono-install --with-mcs-docs=no
+          make -j$(nproc)
+          make install
+
+      - name: Package Mono
+        run: |
+          mkdir -p dist
+          cd /tmp/mono-install
+          tar -czf $GITHUB_WORKSPACE/dist/mono-linux-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mono-linux-x64
+          path: dist/mono-linux-x64.tar.gz
+
+  build-mono-macos:
+    runs-on: macos-12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install autoconf automake libtool pkg-config
+
+      - name: Clone and build Mono
+        run: |
+          git clone --depth 1 --branch ${{ env.MONO_VERSION }} https://github.com/mono/mono.git
+          cd mono
+          ./autogen.sh --prefix=/tmp/mono-install --with-mcs-docs=no
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+      - name: Package Mono
+        run: |
+          mkdir -p dist
+          cd /tmp/mono-install
+          tar -czf $GITHUB_WORKSPACE/dist/mono-macos-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mono-macos-x64
+          path: dist/mono-macos-x64.tar.gz
+
+  # ARM GNU Toolchain のダウンロード・再パッケージ
+  download-arm-toolchain-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ARM GNU Toolchain for Linux
+        run: |
+          # ARM GNU Toolchain の公式ダウンロードURL
+          VERSION="${{ env.ARM_TOOLCHAIN_VERSION }}"
+          DOWNLOAD_URL="https://developer.arm.com/-/media/Files/downloads/gnu/$VERSION/binrel/arm-gnu-toolchain-$VERSION-x86_64-arm-none-eabi.tar.xz"
+          echo "Downloading ARM Toolchain from: $DOWNLOAD_URL"
+          curl -L -o arm-toolchain-linux.tar.xz "$DOWNLOAD_URL"
+
+      - name: Extract and repackage
+        run: |
+          mkdir -p dist/arm-toolchain-linux-x64
+          tar -xJf arm-toolchain-linux.tar.xz -C dist/arm-toolchain-linux-x64 --strip-components=1
+          
+          # 実行権限を設定
+          chmod +x dist/arm-toolchain-linux-x64/bin/*
+          
+          cd dist
+          tar -czf arm-toolchain-linux-x64.tar.gz arm-toolchain-linux-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-toolchain-linux-x64
+          path: dist/arm-toolchain-linux-x64.tar.gz
+
+  download-arm-toolchain-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ARM GNU Toolchain for macOS
+        run: |
+          VERSION="${{ env.ARM_TOOLCHAIN_VERSION }}"
+          DOWNLOAD_URL="https://developer.arm.com/-/media/Files/downloads/gnu/$VERSION/binrel/arm-gnu-toolchain-$VERSION-darwin-x64-arm-none-eabi.tar.xz"
+          echo "Downloading ARM Toolchain from: $DOWNLOAD_URL"
+          curl -L -o arm-toolchain-macos.tar.xz "$DOWNLOAD_URL"
+
+      - name: Extract and repackage
+        run: |
+          mkdir -p dist/arm-toolchain-macos-x64
+          tar -xJf arm-toolchain-macos.tar.xz -C dist/arm-toolchain-macos-x64 --strip-components=1
+          
+          # 実行権限を設定
+          chmod +x dist/arm-toolchain-macos-x64/bin/*
+          
+          cd dist
+          tar -czf arm-toolchain-macos-x64.tar.gz arm-toolchain-macos-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-toolchain-macos-x64
+          path: dist/arm-toolchain-macos-x64.tar.gz
+
+  download-arm-toolchain-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ARM GNU Toolchain for Windows
+        run: |
+          $VERSION = "${{ env.ARM_TOOLCHAIN_VERSION }}"
+          $DOWNLOAD_URL = "https://developer.arm.com/-/media/Files/downloads/gnu/$VERSION/binrel/arm-gnu-toolchain-$VERSION-mingw-w64-i686-arm-none-eabi.zip"
+          Write-Host "Downloading ARM Toolchain from: $DOWNLOAD_URL"
+          Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile "arm-toolchain-windows.zip"
+
+      - name: Extract and repackage
+        run: |
+          mkdir dist\arm-toolchain-windows-x64
+          Expand-Archive -Path "arm-toolchain-windows.zip" -DestinationPath "temp"
+          $extractedFolder = Get-ChildItem -Path "temp" -Directory | Select-Object -First 1
+          Move-Item -Path "$($extractedFolder.FullName)\*" -Destination "dist\arm-toolchain-windows-x64"
+          Compress-Archive -Path "dist\arm-toolchain-windows-x64" -DestinationPath "dist\arm-toolchain-windows-x64.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-toolchain-windows-x64
+          path: dist/arm-toolchain-windows-x64.zip
+
+  # OpenOCD のビルド
+  build-openocd-linux:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            autoconf \
+            libtool \
+            automake \
+            texinfo \
+            libudev-dev \
+            libusb-1.0-0-dev \
+            libhidapi-dev \
+            pkg-config \
+            git
+
+      - name: Clone and build OpenOCD
+        run: |
+          git clone --depth 1 --branch ${{ env.OPENOCD_VERSION }} https://github.com/openocd-org/openocd.git
+          cd openocd
+          ./bootstrap
+          ./configure --prefix=/tmp/openocd-install \
+            --enable-ftdi \
+            --enable-stlink \
+            --enable-ti-icdi \
+            --enable-ulink \
+            --enable-usb-blaster-2 \
+            --enable-jlink \
+            --enable-osbdm \
+            --enable-opendous \
+            --enable-aice \
+            --enable-vsllink \
+            --enable-usbprog \
+            --enable-rlink \
+            --enable-armjtagew \
+            --enable-cmsis-dap \
+            --enable-kitprog \
+            --enable-usb-blaster \
+            --enable-presto \
+            --enable-openjtag
+          make -j$(nproc)
+          make install
+
+      - name: Package OpenOCD
+        run: |
+          mkdir -p dist
+          cd /tmp/openocd-install
+          tar -czf $GITHUB_WORKSPACE/dist/openocd-linux-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openocd-linux-x64
+          path: dist/openocd-linux-x64.tar.gz
+
+  build-openocd-macos:
+    runs-on: macos-12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install autoconf automake libtool texinfo libusb hidapi pkg-config
+
+      - name: Clone and build OpenOCD
+        run: |
+          git clone --depth 1 --branch ${{ env.OPENOCD_VERSION }} https://github.com/openocd-org/openocd.git
+          cd openocd
+          ./bootstrap
+          ./configure --prefix=/tmp/openocd-install \
+            --enable-ftdi \
+            --enable-stlink \
+            --enable-ti-icdi \
+            --enable-ulink \
+            --enable-jlink \
+            --enable-osbdm \
+            --enable-opendous \
+            --enable-aice \
+            --enable-vsllink \
+            --enable-usbprog \
+            --enable-rlink \
+            --enable-armjtagew \
+            --enable-cmsis-dap \
+            --enable-kitprog \
+            --enable-presto \
+            --enable-openjtag
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+      - name: Package OpenOCD
+        run: |
+          mkdir -p dist
+          cd /tmp/openocd-install
+          tar -czf $GITHUB_WORKSPACE/dist/openocd-macos-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openocd-macos-x64
+          path: dist/openocd-macos-x64.tar.gz
+
+  # Renode のダウンロード (既存、統合版)
+  download-renode-linux:
+    runs-on: ubuntu-20.04
+    needs: [build-mono-linux, build-openocd-linux, download-arm-toolchain-linux]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Download Renode binary
+        run: |
+          DOWNLOAD_URL="https://github.com/renode/renode/releases/download/${{ env.RENODE_VERSION }}/renode-${{ env.RENODE_VERSION }}.linux-portable.tar.gz"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L -o renode-linux.tar.gz "$DOWNLOAD_URL"
+
+      - name: Create integrated package
+        run: |
+          mkdir -p dist/embedded-tools-linux-x64
+          
+          # Renode
+          tar -xzf renode-linux.tar.gz -C dist/embedded-tools-linux-x64 --strip-components=1
+          
+          # Mono
+          mkdir -p dist/embedded-tools-linux-x64/mono
+          cd dist/embedded-tools-linux-x64/mono
+          tar -xzf $GITHUB_WORKSPACE/artifacts/mono-linux-x64/mono-linux-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # ARM Toolchain
+          mkdir -p dist/embedded-tools-linux-x64/arm-toolchain
+          cd dist/embedded-tools-linux-x64/arm-toolchain
+          tar -xzf $GITHUB_WORKSPACE/artifacts/arm-toolchain-linux-x64/arm-toolchain-linux-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # OpenOCD
+          mkdir -p dist/embedded-tools-linux-x64/openocd
+          cd dist/embedded-tools-linux-x64/openocd
+          tar -xzf $GITHUB_WORKSPACE/artifacts/openocd-linux-x64/openocd-linux-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # 統合実行ラッパーを作成
+          cat > dist/embedded-tools-linux-x64/setup-env.sh << 'SETUP_EOF'
+#!/bin/bash
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
+export LD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$LD_LIBRARY_PATH"
+echo "Embedded development environment configured!"
+echo "Available tools:"
+echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
+echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
+echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
+echo "  - renode: Available in $TOOLS_DIR"
+SETUP_EOF
+          chmod +x dist/embedded-tools-linux-x64/setup-env.sh
+          
+          # Renode実行ラッパー
+          cat > dist/embedded-tools-linux-x64/renode << 'RENODE_EOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+export LD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$LD_LIBRARY_PATH"
+exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+RENODE_EOF
+          chmod +x dist/embedded-tools-linux-x64/renode
+          
+          cd dist
+          tar -czf embedded-tools-linux-x64.tar.gz embedded-tools-linux-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-tools-linux-x64
+          path: dist/embedded-tools-linux-x64.tar.gz
+
+  # 同様にmacOSとWindowsパッケージも作成...
+  download-renode-macos:
+    runs-on: macos-12
+    needs: [build-mono-macos, build-openocd-macos, download-arm-toolchain-macos]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Download Renode binary
+        run: |
+          # macOS版Renodeが無い場合はLinux版を使用
+          DOWNLOAD_URL="https://github.com/renode/renode/releases/download/${{ env.RENODE_VERSION }}/renode-${{ env.RENODE_VERSION }}.linux-portable.tar.gz"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L -o renode-macos.tar.gz "$DOWNLOAD_URL"
+
+      - name: Create integrated package
+        run: |
+          mkdir -p dist/embedded-tools-macos-x64
+          
+          # Renode
+          tar -xzf renode-macos.tar.gz -C dist/embedded-tools-macos-x64 --strip-components=1
+          
+          # Mono
+          mkdir -p dist/embedded-tools-macos-x64/mono
+          cd dist/embedded-tools-macos-x64/mono
+          tar -xzf $GITHUB_WORKSPACE/artifacts/mono-macos-x64/mono-macos-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # ARM Toolchain
+          mkdir -p dist/embedded-tools-macos-x64/arm-toolchain
+          cd dist/embedded-tools-macos-x64/arm-toolchain
+          tar -xzf $GITHUB_WORKSPACE/artifacts/arm-toolchain-macos-x64/arm-toolchain-macos-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # OpenOCD
+          mkdir -p dist/embedded-tools-macos-x64/openocd
+          cd dist/embedded-tools-macos-x64/openocd
+          tar -xzf $GITHUB_WORKSPACE/artifacts/openocd-macos-x64/openocd-macos-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # 統合実行ラッパーを作成
+          cat > dist/embedded-tools-macos-x64/setup-env.sh << 'EOF'
+#!/bin/bash
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$TOOLS_DIR/arm-toolchain/bin:$TOOLS_DIR/openocd/bin:$TOOLS_DIR/mono/bin:$PATH"
+export DYLD_LIBRARY_PATH="$TOOLS_DIR/mono/lib:$DYLD_LIBRARY_PATH"
+echo "Embedded development environment configured!"
+echo "Available tools:"
+echo "  - arm-none-eabi-gcc: $(arm-none-eabi-gcc --version 2>/dev/null | head -1 || echo 'Not found')"
+echo "  - openocd: $(openocd --version 2>&1 | head -1 || echo 'Not found')"
+echo "  - mono: $(mono --version 2>/dev/null | head -1 || echo 'Not found')"
+echo "  - renode: Available in $TOOLS_DIR"
+EOF
+          chmod +x dist/embedded-tools-macos-x64/setup-env.sh
+          
+          # Renode実行ラッパー
+          cat > dist/embedded-tools-macos-x64/renode << 'EOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+export DYLD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$DYLD_LIBRARY_PATH"
+exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+EOF
+          chmod +x dist/embedded-tools-macos-x64/renode
+          
+          cd dist
+          tar -czf embedded-tools-macos-x64.tar.gz embedded-tools-macos-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-tools-macos-x64
+          path: dist/embedded-tools-macos-x64.tar.gz
+
+  create-release:
+    needs: [download-renode-linux, download-renode-macos]
+    runs-on: ubuntu-latest
+    if: always() && (needs.download-renode-linux.result == 'success' || needs.download-renode-macos.result == 'success')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+          TAG="v${TIMESTAMP}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Embedded Development Tools ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## 組み込み開発ツール統合パッケージ
+            
+            **含まれるツール:**
+            - **Renode:** ${{ env.RENODE_VERSION }}
+            - **Mono:** ${{ env.MONO_VERSION }}
+            - **ARM GNU Toolchain:** ${{ env.ARM_TOOLCHAIN_VERSION }}
+            - **OpenOCD:** ${{ env.OPENOCD_VERSION }}
+            
+            ### 利用可能なプラットフォーム
+            - Linux x64
+            - macOS x64
+            - Windows x64
+            
+            ### インストール方法
+            
+            1. 対象プラットフォームのファイルをダウンロード
+            2. `~/.emby/embedded-tools/` に展開
+            3. 環境設定: `. setup-env.sh` (Linux/macOS) または `setup-env.bat` (Windows)
+            4. 開発開始！
+            
+            ### ツールの使用方法
+            
+            ```bash
+            # 環境設定
+            source ~/.emby/embedded-tools/setup-env.sh
+            
+            # ARM GCC でコンパイル
+            arm-none-eabi-gcc -mcpu=cortex-m4 main.c -o main.elf
+            
+            # OpenOCD でデバッグ
+            openocd -f board/st_nucleo_f4.cfg
+            
+            # Renode でシミュレーション
+            ./renode
+            ```
+            
+            ### ライセンス
+            - Renode: MIT License
+            - Mono: MIT/LGPL License
+            - ARM GNU Toolchain: GPL License
+            - OpenOCD: GPL License
+          files: |
+            artifacts/embedded-tools-*/embedded-tools-*.tar.gz
+            artifacts/embedded-tools-*/embedded-tools-*.zip
+          draft: false
+          prerelease: false

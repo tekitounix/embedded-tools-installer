@@ -1,0 +1,244 @@
+name: Check All Upstream Releases
+
+on:
+  schedule:
+    # 毎日 UTC 09:00 (JST 18:00) に実行
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+env:
+  RENODE_REPO: 'renode/renode'
+  MONO_REPO: 'mono/mono'
+  ARM_TOOLCHAIN_REPO: 'ARM-software/LLVM-embedded-toolchain-for-Arm'
+  OPENOCD_REPO: 'openocd-org/openocd'
+
+jobs:
+  check-renode:
+    runs-on: ubuntu-latest
+    outputs:
+      has-new-release: ${{ steps.check.outputs.has-new-release }}
+      new-version: ${{ steps.check.outputs.new-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Renode upstream releases
+        id: check
+        run: |
+          UPSTREAM_LATEST=$(curl -s https://api.github.com/repos/${{ env.RENODE_REPO }}/releases/latest | jq -r '.tag_name')
+          echo "Upstream latest: $UPSTREAM_LATEST"
+          
+          CURRENT_LATEST=""
+          if [ -f "RENODE_VERSION" ]; then
+            CURRENT_LATEST=$(cat RENODE_VERSION)
+          fi
+          echo "Current latest: $CURRENT_LATEST"
+          
+          if [ "$UPSTREAM_LATEST" != "$CURRENT_LATEST" ] && [ "$UPSTREAM_LATEST" != "null" ]; then
+            echo "New Renode release found: $UPSTREAM_LATEST"
+            echo "has-new-release=true" >> $GITHUB_OUTPUT
+            echo "new-version=$UPSTREAM_LATEST" >> $GITHUB_OUTPUT
+            echo "$UPSTREAM_LATEST" > RENODE_VERSION
+          else
+            echo "No new Renode release found"
+            echo "has-new-release=false" >> $GITHUB_OUTPUT
+          fi
+
+  check-mono:
+    runs-on: ubuntu-latest
+    outputs:
+      has-new-release: ${{ steps.check.outputs.has-new-release }}
+      new-version: ${{ steps.check.outputs.new-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Mono upstream releases
+        id: check
+        run: |
+          UPSTREAM_LATEST=$(curl -s https://api.github.com/repos/${{ env.MONO_REPO }}/releases/latest | jq -r '.tag_name')
+          echo "Upstream latest: $UPSTREAM_LATEST"
+          
+          CURRENT_MONO=""
+          if [ -f "MONO_VERSION" ]; then
+            CURRENT_MONO=$(cat MONO_VERSION)
+          fi
+          echo "Current Mono version: $CURRENT_MONO"
+          
+          if [ "$UPSTREAM_LATEST" != "$CURRENT_MONO" ] && [ "$UPSTREAM_LATEST" != "null" ]; then
+            echo "New Mono release found: $UPSTREAM_LATEST"
+            echo "has-new-release=true" >> $GITHUB_OUTPUT
+            echo "new-version=$UPSTREAM_LATEST" >> $GITHUB_OUTPUT
+            echo "$UPSTREAM_LATEST" > MONO_VERSION
+          else
+            echo "No new Mono release found"
+            echo "has-new-release=false" >> $GITHUB_OUTPUT
+          fi
+
+  check-arm-toolchain:
+    runs-on: ubuntu-latest
+    outputs:
+      has-new-release: ${{ steps.check.outputs.has-new-release }}
+      new-version: ${{ steps.check.outputs.new-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check ARM GNU Toolchain releases
+        id: check
+        run: |
+          # ARM GNU Toolchain の最新リリースを取得
+          # 公式ダウンロードページから最新版情報を取得
+          UPSTREAM_LATEST=$(curl -s "https://api.github.com/repos/ARM-software/LLVM-embedded-toolchain-for-Arm/releases/latest" | jq -r '.tag_name')
+          
+          # GNU Arm Embedded Toolchain の場合（こちらが一般的）
+          if [ "$UPSTREAM_LATEST" = "null" ]; then
+            # 代替として、GNU Arm Embedded Toolchain のバージョンを手動設定
+            UPSTREAM_LATEST="13.2.Rel1"  # 2024年時点の最新版
+          fi
+          
+          echo "Upstream latest: $UPSTREAM_LATEST"
+          
+          CURRENT_ARM=""
+          if [ -f "ARM_TOOLCHAIN_VERSION" ]; then
+            CURRENT_ARM=$(cat ARM_TOOLCHAIN_VERSION)
+          fi
+          echo "Current ARM Toolchain version: $CURRENT_ARM"
+          
+          if [ "$UPSTREAM_LATEST" != "$CURRENT_ARM" ] && [ "$UPSTREAM_LATEST" != "null" ]; then
+            echo "New ARM Toolchain release found: $UPSTREAM_LATEST"
+            echo "has-new-release=true" >> $GITHUB_OUTPUT
+            echo "new-version=$UPSTREAM_LATEST" >> $GITHUB_OUTPUT
+            echo "$UPSTREAM_LATEST" > ARM_TOOLCHAIN_VERSION
+          else
+            echo "No new ARM Toolchain release found"
+            echo "has-new-release=false" >> $GITHUB_OUTPUT
+          fi
+
+  check-openocd:
+    runs-on: ubuntu-latest
+    outputs:
+      has-new-release: ${{ steps.check.outputs.has-new-release }}
+      new-version: ${{ steps.check.outputs.new-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check OpenOCD upstream releases
+        id: check
+        run: |
+          UPSTREAM_LATEST=$(curl -s https://api.github.com/repos/${{ env.OPENOCD_REPO }}/releases/latest | jq -r '.tag_name')
+          echo "Upstream latest: $UPSTREAM_LATEST"
+          
+          CURRENT_OPENOCD=""
+          if [ -f "OPENOCD_VERSION" ]; then
+            CURRENT_OPENOCD=$(cat OPENOCD_VERSION)
+          fi
+          echo "Current OpenOCD version: $CURRENT_OPENOCD"
+          
+          if [ "$UPSTREAM_LATEST" != "$CURRENT_OPENOCD" ] && [ "$UPSTREAM_LATEST" != "null" ]; then
+            echo "New OpenOCD release found: $UPSTREAM_LATEST"
+            echo "has-new-release=true" >> $GITHUB_OUTPUT
+            echo "new-version=$UPSTREAM_LATEST" >> $GITHUB_OUTPUT
+            echo "$UPSTREAM_LATEST" > OPENOCD_VERSION
+          else
+            echo "No new OpenOCD release found"
+            echo "has-new-release=false" >> $GITHUB_OUTPUT
+          fi
+
+  commit-version-updates:
+    needs: [check-renode, check-mono, check-arm-toolchain, check-openocd]
+    runs-on: ubuntu-latest
+    if: |
+      needs.check-renode.outputs.has-new-release == 'true' || 
+      needs.check-mono.outputs.has-new-release == 'true' ||
+      needs.check-arm-toolchain.outputs.has-new-release == 'true' ||
+      needs.check-openocd.outputs.has-new-release == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version files
+        run: |
+          # バージョンファイルを更新
+          if [ "${{ needs.check-renode.outputs.has-new-release }}" = "true" ]; then
+            echo "${{ needs.check-renode.outputs.new-version }}" > RENODE_VERSION
+          fi
+          
+          if [ "${{ needs.check-mono.outputs.has-new-release }}" = "true" ]; then
+            echo "${{ needs.check-mono.outputs.new-version }}" > MONO_VERSION
+          fi
+          
+          if [ "${{ needs.check-arm-toolchain.outputs.has-new-release }}" = "true" ]; then
+            echo "${{ needs.check-arm-toolchain.outputs.new-version }}" > ARM_TOOLCHAIN_VERSION
+          fi
+          
+          if [ "${{ needs.check-openocd.outputs.has-new-release }}" = "true" ]; then
+            echo "${{ needs.check-openocd.outputs.new-version }}" > OPENOCD_VERSION
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add *_VERSION
+          
+          COMMIT_MSG="Update tool versions:"
+          if [ "${{ needs.check-renode.outputs.has-new-release }}" = "true" ]; then
+            COMMIT_MSG="$COMMIT_MSG Renode ${{ needs.check-renode.outputs.new-version }}"
+          fi
+          if [ "${{ needs.check-mono.outputs.has-new-release }}" = "true" ]; then
+            COMMIT_MSG="$COMMIT_MSG Mono ${{ needs.check-mono.outputs.new-version }}"
+          fi
+          if [ "${{ needs.check-arm-toolchain.outputs.has-new-release }}" = "true" ]; then
+            COMMIT_MSG="$COMMIT_MSG ARM-Toolchain ${{ needs.check-arm-toolchain.outputs.new-version }}"
+          fi
+          if [ "${{ needs.check-openocd.outputs.has-new-release }}" = "true" ]; then
+            COMMIT_MSG="$COMMIT_MSG OpenOCD ${{ needs.check-openocd.outputs.new-version }}"
+          fi
+          
+          git commit -m "$COMMIT_MSG" || exit 0
+          git push
+
+  trigger-build:
+    needs: [check-renode, check-mono, check-arm-toolchain, check-openocd]
+    if: |
+      needs.check-renode.outputs.has-new-release == 'true' || 
+      needs.check-mono.outputs.has-new-release == 'true' ||
+      needs.check-arm-toolchain.outputs.has-new-release == 'true' ||
+      needs.check-openocd.outputs.has-new-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger build workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const inputs = {};
+            
+            if ('${{ needs.check-renode.outputs.has-new-release }}' === 'true') {
+              inputs.renode_version = '${{ needs.check-renode.outputs.new-version }}';
+            }
+            
+            if ('${{ needs.check-mono.outputs.has-new-release }}' === 'true') {
+              inputs.mono_version = '${{ needs.check-mono.outputs.new-version }}';
+            }
+            
+            if ('${{ needs.check-arm-toolchain.outputs.has-new-release }}' === 'true') {
+              inputs.arm_toolchain_version = '${{ needs.check-arm-toolchain.outputs.new-version }}';
+            }
+            
+            if ('${{ needs.check-openocd.outputs.has-new-release }}' === 'true') {
+              inputs.openocd_version = '${{ needs.check-openocd.outputs.new-version }}';
+            }
+            
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-embedded-tools.yml',
+              ref: 'main',
+              inputs: inputs
+            });

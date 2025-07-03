@@ -1,0 +1,312 @@
+# クロスプラットフォームビルド
+name: Build Renode Runtime
+
+on:
+  repository_dispatch:
+    types: [upstream-updated]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'VERSION'
+      - 'MONO_VERSION'
+
+env:
+  RENODE_VERSION: ${{ github.event.client_payload.renode_version || 'v1.14.0' }}
+  MONO_VERSION: ${{ github.event.client_payload.mono_version || 'mono-6.12.0.182' }}
+
+jobs:
+  build-mono-linux:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            autoconf \
+            libtool \
+            automake \
+            cmake \
+            gettext \
+            libglib2.0-dev \
+            git
+
+      - name: Clone and build Mono
+        run: |
+          git clone --depth 1 --branch ${{ env.MONO_VERSION }} https://github.com/mono/mono.git
+          cd mono
+          ./autogen.sh --prefix=/tmp/mono-install --with-mcs-docs=no
+          make -j$(nproc)
+          make install
+
+      - name: Package Mono
+        run: |
+          mkdir -p dist
+          cd /tmp/mono-install
+          tar -czf $GITHUB_WORKSPACE/dist/mono-linux-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mono-linux-x64
+          path: dist/mono-linux-x64.tar.gz
+
+  build-mono-macos:
+    runs-on: macos-12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install autoconf automake libtool pkg-config
+
+      - name: Clone and build Mono
+        run: |
+          git clone --depth 1 --branch ${{ env.MONO_VERSION }} https://github.com/mono/mono.git
+          cd mono
+          ./autogen.sh --prefix=/tmp/mono-install --with-mcs-docs=no
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+      - name: Package Mono
+        run: |
+          mkdir -p dist
+          cd /tmp/mono-install
+          tar -czf $GITHUB_WORKSPACE/dist/mono-macos-x64.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mono-macos-x64
+          path: dist/mono-macos-x64.tar.gz
+
+  download-renode-linux:
+    runs-on: ubuntu-20.04
+    needs: build-mono-linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Mono artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mono-linux-x64
+          path: artifacts
+
+      - name: Download Renode binary
+        run: |
+          # Renodeの公式リリースからLinux版バイナリをダウンロード
+          DOWNLOAD_URL="https://github.com/renode/renode/releases/download/${{ env.RENODE_VERSION }}/renode-${{ env.RENODE_VERSION }}.linux-portable.tar.gz"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L -o renode-linux.tar.gz "$DOWNLOAD_URL"
+
+      - name: Extract and repackage Renode
+        run: |
+          mkdir -p dist/renode-linux-x64
+          
+          # Renodeバイナリを展開
+          tar -xzf renode-linux.tar.gz -C dist/renode-linux-x64 --strip-components=1
+          
+          # Monoを統合
+          mkdir -p dist/renode-linux-x64/mono
+          cd dist/renode-linux-x64/mono
+          tar -xzf $GITHUB_WORKSPACE/artifacts/mono-linux-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # 実行ラッパーを作成
+          cat > dist/renode-linux-x64/renode << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+          export LD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$LD_LIBRARY_PATH"
+          exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+          EOF
+          chmod +x dist/renode-linux-x64/renode
+          
+          cd dist
+          tar -czf renode-linux-x64.tar.gz renode-linux-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-linux-x64
+          path: dist/renode-linux-x64.tar.gz
+
+  download-renode-macos:
+    runs-on: macos-12
+    needs: build-mono-macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Mono artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mono-macos-x64
+          path: artifacts
+
+      - name: Download Renode binary
+        run: |
+          # Renodeの公式リリースからmacOS版バイナリをダウンロード
+          DOWNLOAD_URL="https://github.com/renode/renode/releases/download/${{ env.RENODE_VERSION }}/renode-${{ env.RENODE_VERSION }}.macos-portable.tar.gz"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L -o renode-macos.tar.gz "$DOWNLOAD_URL"
+
+      - name: Extract and repackage Renode
+        run: |
+          mkdir -p dist/renode-macos-x64
+          
+          # Renodeバイナリを展開
+          tar -xzf renode-macos.tar.gz -C dist/renode-macos-x64 --strip-components=1
+          
+          # Monoを統合
+          mkdir -p dist/renode-macos-x64/mono
+          cd dist/renode-macos-x64/mono
+          tar -xzf $GITHUB_WORKSPACE/artifacts/mono-macos-x64.tar.gz
+          cd $GITHUB_WORKSPACE
+          
+          # 実行ラッパーを作成
+          cat > dist/renode-macos-x64/renode << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export PATH="$SCRIPT_DIR/mono/bin:$PATH"
+          export DYLD_LIBRARY_PATH="$SCRIPT_DIR/mono/lib:$DYLD_LIBRARY_PATH"
+          exec "$SCRIPT_DIR/mono/bin/mono" "$SCRIPT_DIR/Renode.exe" "$@"
+          EOF
+          chmod +x dist/renode-macos-x64/renode
+          
+          cd dist
+          tar -czf renode-macos-x64.tar.gz renode-macos-x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-macos-x64
+          path: dist/renode-macos-x64.tar.gz
+
+  download-renode-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Renode binary
+        run: |
+          # Renodeの公式リリースからWindows版バイナリをダウンロード
+          $DOWNLOAD_URL = "https://github.com/renode/renode/releases/download/${{ env.RENODE_VERSION }}/renode-${{ env.RENODE_VERSION }}.windows-portable.zip"
+          Write-Host "Downloading from: $DOWNLOAD_URL"
+          Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile "renode-windows.zip"
+
+      - name: Extract and repackage Renode
+        run: |
+          mkdir dist\renode-windows-x64
+          
+          # Renodeバイナリを展開
+          Expand-Archive -Path "renode-windows.zip" -DestinationPath "temp"
+          $extractedFolder = Get-ChildItem -Path "temp" -Directory | Select-Object -First 1
+          Move-Item -Path "$($extractedFolder.FullName)\*" -Destination "dist\renode-windows-x64"
+          
+          # 実行ラッパーを作成
+          @"
+          @echo off
+          set SCRIPT_DIR=%~dp0
+          "%SCRIPT_DIR%Renode.exe" %*
+          "@ | Out-File -FilePath "dist\renode-windows-x64\renode.bat" -Encoding ASCII
+          
+          Compress-Archive -Path "dist\renode-windows-x64" -DestinationPath "dist\renode-windows-x64.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-windows-x64
+          path: dist/renode-windows-x64.zip
+
+  create-release:
+    needs: [download-renode-linux, download-renode-macos, download-renode-windows]
+    runs-on: ubuntu-latest
+    if: always() && (needs.download-renode-linux.result == 'success' || needs.download-renode-macos.result == 'success' || needs.download-renode-windows.result == 'success')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create combined packages
+        run: |
+          mkdir -p dist
+          
+          # Linux パッケージ作成
+          if [ -f "artifacts/renode-linux-x64/renode-linux-x64.tar.gz" ] && [ -f "artifacts/mono-linux-x64/mono-linux-x64.tar.gz" ]; then
+            mkdir -p combined/linux-x64
+            cd combined/linux-x64
+            tar -xzf ../../artifacts/renode-linux-x64/renode-linux-x64.tar.gz
+            mkdir -p mono
+            cd mono
+            tar -xzf ../../../artifacts/mono-linux-x64/mono-linux-x64.tar.gz
+            cd ../../..
+            tar -czf dist/renode-runtime-linux-x64.tar.gz -C combined/linux-x64 .
+          fi
+          
+          # macOS パッケージ作成
+          if [ -f "artifacts/renode-macos-x64/renode-macos-x64.tar.gz" ] && [ -f "artifacts/mono-macos-x64/mono-macos-x64.tar.gz" ]; then
+            mkdir -p combined/macos-x64
+            cd combined/macos-x64
+            tar -xzf ../../artifacts/renode-macos-x64/renode-macos-x64.tar.gz
+            mkdir -p mono
+            cd mono
+            tar -xzf ../../../artifacts/mono-macos-x64/mono-macos-x64.tar.gz
+            cd ../../..
+            tar -czf dist/renode-runtime-macos-x64.tar.gz -C combined/macos-x64 .
+          fi
+          
+          # Windows パッケージ作成（Monoは不要）
+          if [ -f "artifacts/renode-windows-x64/renode-windows-x64.zip" ]; then
+            cp artifacts/renode-windows-x64/renode-windows-x64.zip dist/renode-runtime-windows-x64.zip
+          fi
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+          TAG="v${TIMESTAMP}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Renode Runtime ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Renode Runtime Distribution
+            
+            **Renode Version:** ${{ env.RENODE_VERSION }}
+            **Mono Version:** ${{ env.MONO_VERSION }}
+            
+            ### 利用可能なプラットフォーム
+            - Linux x64
+            - macOS x64  
+            - Windows x64
+            
+            ### インストール方法
+            
+            1. 対象プラットフォームのファイルをダウンロード
+            2. `~/.emby/renode/` に展開
+            3. 実行ラッパー (`renode` または `renode.bat`) を使用
+            
+            ### ライセンス
+            - Renode: MIT License
+            - Mono: MIT/LGPL License
+          files: |
+            dist/renode-runtime-*.tar.gz
+            dist/renode-runtime-*.zip
+          draft: false
+          prerelease: false

@@ -1,0 +1,121 @@
+# 上流リポジトリのリリース監視とフォーク更新
+name: Check Upstream Updates
+
+on:
+  schedule:
+    # 毎日 UTC 9:00 (JST 18:00) に実行
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-renode:
+    runs-on: ubuntu-latest
+    outputs:
+      has_new_release: ${{ steps.check.outputs.has_new_release }}
+      latest_version: ${{ steps.check.outputs.latest_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Renode latest release
+        id: check
+        run: |
+          # 上流の最新リリースを取得
+          LATEST_RELEASE=$(curl -s "https://api.github.com/repos/renode/renode/releases/latest" | jq -r '.tag_name')
+          echo "Latest upstream version: $LATEST_RELEASE"
+          
+          # 現在のバージョンを取得（存在しない場合は空）
+          if [ -f "VERSION" ]; then
+            CURRENT_VERSION=$(cat VERSION)
+          else
+            CURRENT_VERSION=""
+          fi
+          echo "Current version: $CURRENT_VERSION"
+          
+          # バージョン比較
+          if [ "$LATEST_RELEASE" != "$CURRENT_VERSION" ]; then
+            echo "has_new_release=true" >> $GITHUB_OUTPUT
+            echo "latest_version=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+            echo "New version available: $LATEST_RELEASE"
+          else
+            echo "has_new_release=false" >> $GITHUB_OUTPUT
+            echo "No new version available"
+          fi
+
+      - name: Update version file
+        if: steps.check.outputs.has_new_release == 'true'
+        run: |
+          echo "${{ steps.check.outputs.latest_version }}" > VERSION
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add VERSION
+          git commit -m "Update to Renode ${{ steps.check.outputs.latest_version }}" || exit 0
+          git push
+
+  check-mono:
+    runs-on: ubuntu-latest
+    outputs:
+      has_new_release: ${{ steps.check.outputs.has_new_release }}
+      latest_version: ${{ steps.check.outputs.latest_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Mono latest release
+        id: check
+        run: |
+          # 上流の最新リリースを取得
+          LATEST_RELEASE=$(curl -s "https://api.github.com/repos/mono/mono/releases/latest" | jq -r '.tag_name')
+          echo "Latest upstream version: $LATEST_RELEASE"
+          
+          # 現在のバージョンを取得（存在しない場合は空）
+          if [ -f "MONO_VERSION" ]; then
+            CURRENT_VERSION=$(cat MONO_VERSION)
+          else
+            CURRENT_VERSION=""
+          fi
+          echo "Current version: $CURRENT_VERSION"
+          
+          # バージョン比較
+          if [ "$LATEST_RELEASE" != "$CURRENT_VERSION" ]; then
+            echo "has_new_release=true" >> $GITHUB_OUTPUT
+            echo "latest_version=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+            echo "New version available: $LATEST_RELEASE"
+          else
+            echo "has_new_release=false" >> $GITHUB_OUTPUT
+            echo "No new version available"
+          fi
+
+      - name: Update version file
+        if: steps.check.outputs.has_new_release == 'true'
+        run: |
+          echo "${{ steps.check.outputs.latest_version }}" > MONO_VERSION
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add MONO_VERSION
+          git commit -m "Update to Mono ${{ steps.check.outputs.latest_version }}" || exit 0
+          git push
+
+  trigger-build:
+    needs: [check-renode, check-mono]
+    runs-on: ubuntu-latest
+    if: |
+      needs.check-renode.outputs.has_new_release == 'true' || 
+      needs.check-mono.outputs.has_new_release == 'true'
+    steps:
+      - name: Trigger build workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: upstream-updated
+          client-payload: |
+            {
+              "renode_version": "${{ needs.check-renode.outputs.latest_version }}",
+              "mono_version": "${{ needs.check-mono.outputs.latest_version }}",
+              "renode_updated": "${{ needs.check-renode.outputs.has_new_release }}",
+              "mono_updated": "${{ needs.check-mono.outputs.has_new_release }}"
+            }
