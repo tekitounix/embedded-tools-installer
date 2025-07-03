@@ -25,12 +25,17 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
+          # Monoの公式リポジトリを追加
+          sudo apt-get install -y gnupg ca-certificates
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
+          echo "deb https://download.mono-project.com/repo/ubuntu stable-focal main" | sudo tee /etc/apt/sources.list.d/mono-official-stable.list
+          sudo apt-get update
+          
+          # Renodeの公式依存関係をインストール
           sudo apt-get install -y \
-            build-essential autoconf libtool automake cmake gettext \
-            libglib2.0-dev git curl wget unzip mono-complete \
-            python3 python3-pip python3-setuptools python3-wheel \
-            coreutils policykit-1 libgtk-3-dev \
-            uml-utilities gtk-sharp3 ruby ruby-dev rpm bsdtar
+            git automake cmake autoconf libtool g++ coreutils policykit-1 \
+            libgtk-3-dev uml-utilities gtk-sharp3 python3 python3-pip \
+            mono-complete ruby ruby-dev rpm bsdtar
           sudo gem install fpm
 
       - name: Clone and build Renode
@@ -60,8 +65,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install autoconf automake libtool pkg-config \
-                      cmake gettext mono
+          # Homebrew でMono と必要な依存関係をインストール
+          brew install mono autoconf automake libtool pkg-config cmake gettext
+          # Ruby とFPMをインストール（パッケージ作成用）
+          brew install ruby
+          sudo gem install fpm
 
       - name: Clone and build Renode
         run: |
@@ -91,18 +99,22 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Mono のインストール
-          choco install mono -y
-          # Git と Visual Studio Build Tools
-          choco install git visualstudio2022buildtools -y
-          # MSBuild の PATH を設定
-          echo "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # .NET SDKをインストール（Renodeは.NET対応）
+          choco install dotnet-sdk -y
+          # Git（通常はプリインストール済み）
+          choco install git -y
+          # Visual Studio Build Toolsが必要な場合
+          choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
+          
+          # 環境変数を設定
+          echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> $env:GITHUB_ENV
 
       - name: Clone and build Renode
         run: |
           git clone --depth 1 --branch ${{ env.RENODE_VERSION }} https://github.com/renode/renode.git
           cd renode
-          .\build.bat -p
+          # Windowsでは.NETビルドを使用
+          .\build.sh --net -p
           
       - name: Package Renode for distribution
         run: |
