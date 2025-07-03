@@ -35,7 +35,7 @@ env:
 jobs:
   # Mono のビルド (既存)
   build-mono-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -194,7 +194,7 @@ jobs:
 
   # OpenOCD のビルド
   build-openocd-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -302,7 +302,7 @@ jobs:
 
   # Renode のダウンロード (既存、統合版)
   download-renode-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: [build-mono-linux, build-openocd-linux, download-arm-toolchain-linux]
     steps:
       - name: Checkout
