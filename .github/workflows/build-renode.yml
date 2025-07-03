@@ -1,0 +1,174 @@
+name: Build Renode
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Renode version to build (e.g., v1.14.0)'
+        required: false
+        default: 'v1.14.0'
+  push:
+    branches: [main]
+    paths:
+      - 'RENODE_VERSION'
+
+env:
+  RENODE_VERSION: ${{ github.event.inputs.version || 'v1.14.0' }}
+
+jobs:
+  build-renode-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential autoconf libtool automake cmake gettext \
+            libglib2.0-dev git curl wget unzip mono-complete \
+            python3 python3-pip python3-setuptools python3-wheel \
+            coreutils policykit-1 libgtk-3-dev \
+            uml-utilities gtk-sharp3 ruby ruby-dev rpm bsdtar
+          sudo gem install fpm
+
+      - name: Clone and build Renode
+        run: |
+          git clone --depth 1 --branch ${{ env.RENODE_VERSION }} https://github.com/renode/renode.git
+          cd renode
+          ./build.sh -p
+          
+      - name: Package Renode for distribution
+        run: |
+          mkdir -p dist
+          cd renode/output/packages
+          # portable tar.gz を配布用に準備
+          cp *.tar.gz $GITHUB_WORKSPACE/dist/renode-linux-x64.tar.gz
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-linux-x64
+          path: dist/renode-linux-x64.tar.gz
+
+  build-renode-macos:
+    runs-on: macos-12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install autoconf automake libtool pkg-config \
+                      cmake gettext mono
+
+      - name: Clone and build Renode
+        run: |
+          git clone --depth 1 --branch ${{ env.RENODE_VERSION }} https://github.com/renode/renode.git
+          cd renode
+          ./build.sh -p
+          
+      - name: Package Renode for distribution
+        run: |
+          mkdir -p dist
+          cd renode/output/packages
+          # macOSバイナリパッケージを配布用に準備
+          cp *.tar.gz $GITHUB_WORKSPACE/dist/renode-macos-x64.tar.gz || \
+          cp *.dmg $GITHUB_WORKSPACE/dist/renode-macos-x64.dmg
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-macos-x64
+          path: dist/renode-macos-x64.*
+
+  build-renode-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Mono のインストール
+          choco install mono -y
+          # Git と Visual Studio Build Tools
+          choco install git visualstudio2022buildtools -y
+          # MSBuild の PATH を設定
+          echo "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Clone and build Renode
+        run: |
+          git clone --depth 1 --branch ${{ env.RENODE_VERSION }} https://github.com/renode/renode.git
+          cd renode
+          .\build.bat -p
+          
+      - name: Package Renode for distribution
+        run: |
+          mkdir -p dist
+          cd renode\output\packages
+          # Windows パッケージを配布用に準備
+          if (Test-Path "*.zip") {
+            Copy-Item *.zip $env:GITHUB_WORKSPACE\dist\renode-windows-x64.zip
+          } else {
+            # フォルダーを直接パッケージング
+            Compress-Archive -Path "renode-*" -DestinationPath "$env:GITHUB_WORKSPACE\dist\renode-windows-x64.zip"
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renode-windows-x64
+          path: dist/renode-windows-x64.zip
+
+  create-renode-release:
+    needs: [build-renode-linux, build-renode-macos, build-renode-windows]
+    runs-on: ubuntu-latest
+    if: always() && (needs.build-renode-linux.result == 'success' || needs.build-renode-macos.result == 'success' || needs.build-renode-windows.result == 'success')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+          TAG="renode-${TIMESTAMP}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Create Renode Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Renode Build ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Renode Distribution
+            
+            **Renode Version:** ${{ env.RENODE_VERSION }}
+            
+            ### 利用可能なプラットフォーム
+            - Linux x64
+            - macOS x64  
+            - Windows x64
+            
+            ### インストール方法
+            
+            1. 対象プラットフォームのファイルをダウンロード
+            2. `~/.emby/renode/` に展開
+            3. 実行ラッパー (`renode` または `renode.bat`) を使用
+            
+            ### ライセンス
+            - Renode: MIT License
+          files: |
+            artifacts/renode-*/renode-*.tar.gz
+            artifacts/renode-*/renode-*.dmg
+            artifacts/renode-*/renode-*.zip
+          draft: false
+          prerelease: false
